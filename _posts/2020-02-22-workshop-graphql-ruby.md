@@ -12,19 +12,17 @@ La suite présume une connaissance sommaire du fonctionnement de GraphQL.
 
 ## Structure des données
 
-La première chose à savoir en commençant à travailler avec GraphQL, c’est que tout est typé. Chaque donnée qu’on utilise ou qu’on veut sérialiser doit être clairement définie. Ce n'est pas quelque chose à quoi on est naturellement habitué avec Ruby mais qui s'avère rapidement très confortable.
+La première chose à savoir en commençant à travailler avec GraphQL, c’est que tout est typé. Chaque donnée qu’on utilise ou qu’on veut sérialiser doit être clairement définie. Ce n'est pas une habitude courante dans une utilisation conventionnelle de Ruby. Mais cela s'avère rapidement très confortable.
 
 ### Types
 
 On va donc naturellement commencer par définir des types.
 
-D’abord, on créera des types pour les modèles de notre api dont on aura besoin pour nos requêtes GraphQL. La définition des types GraphQL ressemble beaucoup à la logique qu’on retrouve dans les serializers sur nos API REST classiques, à savoir la définition des données qu’on pourra consulter, et la forme sous laquelle ces données sont mises à disposition, mais va évidemment plus loin en intégrant le typage, des validations, éventuellement une gestion de droits...
+D’abord, on créera des types pour les `models` de notre API dont on aura besoin pour nos requêtes GraphQL. La définition des types GraphQL ressemble beaucoup à la logique qu’on retrouve dans les serializers sur nos API REST classiques, à savoir la définition des données qu’on pourra consulter, et la forme sous laquelle ces données sont mises à disposition, mais va évidemment plus loin en intégrant le typage, des validations, éventuellement une gestion de droits...
 
-Ci-dessous, un exemple de type GraphQL correspondant à un model de notre API :
+Ci-dessous, un exemple de type GraphQL correspondant à un `model` de notre API :
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class ProviderType < Types::BaseObject
     # Ces lignes permettent d'intégrer les spécificités de Relay au type
@@ -33,9 +31,10 @@ module Types
     global_id_field :id
 
     # Ici, on définit les champs qu'on va pouvoir requêter sur notre objet
-    # il peut s'agit de champs en base, de méthodes issues du model
+    # il peut s'agir de champs en base, de méthodes issues du model
     # voire de méthodes directement définies dans le type.
-    # Pour chaque champ, on doit spécifier le type et la possibilité d'être nulle.
+    # Pour chaque champ, on doit spécifier le type
+    # et la possibilité d'être nulle.
     field :display_name, String, null: true
     field :phone_number, String, null: true
     field :siret, String, null: true
@@ -47,9 +46,10 @@ module Types
     field :updated_at, GraphQL::Types::ISO8601DateTime, null: true
 
     # Ici, on choisit de réécrire la relation address du model.
-    # La simple définition du field address suffit pour retourner les bons objets.
-    # mais ce faisant, on peut intégrer la logique de la gem BatchLoader pour
-    # éradiquer les N+1 de notre requête.
+    # La simple définition du field address suffit
+    # pour retourner les bons objets.
+    # Mais ce faisant, on peut intégrer la logique de 
+    # la gem BatchLoader pour éradiquer les N+1 de notre requête.
     def address
       BatchLoader::GraphQL.for(object).batch do |providers_ids, loader|
         Address.where(
@@ -66,26 +66,26 @@ end
 
 Une fois qu'on a défini les types dont on a besoin, ils apparaissent certes directement dans la documentation générée automatiquement par GraphiQL mais ils ne peuvent pas être directement consultés par les consommateurs de l'API.
 
-Pour cela, il est nécessaire de créer des queries. Il s'agit de l'équivalent d'une requête GET en REST. Le consommateur va demander à consulter soit un objet spécifique, soit une collection d'objets (qu'on appellera une *connection* dans le cadre de la méthologie Relay, j'y reviendrai).
+Pour cela, il est nécessaire de créer des queries. Il s'agit de l'équivalent d'une requête GET en REST. Le consommateur va demander à consulter soit un objet spécifique, soit une collection d'objets (qu'on appellera une `connection` dans le cadre de la méthologie Relay, j'y reviendrai).
 
 #### Afficher un objet isolé
 
 Les queries se définissent dans la classe `QueryType` :
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class QueryType < Types::BaseObject
     # Ici, le field correspond au nom de la query
-    # les arguments passés dans le block permettront de retrouver l'objet recherché
+    # les arguments passés dans le block permettront
+    # de retrouver l'objet recherché.
     field :item, Types::ItemType, null: false do
       argument :id, ID, required: true
     end
 
-    # contrairement à la définition des types de modèles vu plus haut, pour les queries
-    # le field ne se suffit pas à lui-même. Il est nécessaire de définir dans une
-    # méthode du même nom la logique qui va résoudre la query.
+    # Contrairement à la définition des types de models vue plus haut,
+    # pour les queries le field ne se suffit pas à lui-même.
+    # Il est nécessaire de définir dans une méthode du même nom
+    # la logique qui va résoudre la query.
     def item(id:)
       Item.find(id)
     end
@@ -100,11 +100,9 @@ Dans la méthode item, on récupère les arguments passés dans le field, et on 
 
 ##### Alléger ses queries
 
-Dès qu'on commence à avoir beaucoup de models différents qu'on veut pouvoir afficher dans une requête, on va être confronté à pas mal de duplication de code. Un peu de metaprogrammation permet d'alléger notre `query_type.rb` :
+Dès qu'on commence à avoir beaucoup de `models` différents qu'on veut pouvoir afficher dans une requête, on va être confronté à pas mal de duplications de code. Un peu de métaprogrammation permet d'alléger notre `query_type.rb` :
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class QueryType < Types::BaseObject
     # On définit d'abord une méthode commune qui retrouve un objet
@@ -113,7 +111,7 @@ module Types
       SergicApiSchema.object_from_id(id, context)
     end
 
-    # Et on crée les fields qui appelent la méthode sus-définie pour tous
+    # Et on crée les fields qui appellent la méthode sus-définie pour tous
     # les types pour lesquels on a besoin d'une query
     %i[
       account_code
@@ -125,7 +123,9 @@ module Types
       provider
       repartition_key
     ].each do |method|
-      field method, "Types::#{method.to_s.camelize}Type".constantize, null: false do
+      field method,
+            "Types::#{method.to_s.camelize}Type".constantize,
+            null: false do
         argument :id, ID, required: true
       end
 
@@ -141,8 +141,6 @@ end
 Par défaut, il n'y a pas grande différence entre une query qui retourne un objet et une autre qui retourne une collection d'objets. On va tout simplement devoir spécifier que le résultat de la requête sera un tableau en passant le type lui-même entre `[]` :
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class QueryType < Types::BaseObject
     field :items, [Types::ItemType], null: false do
@@ -189,18 +187,18 @@ Et on obtient le json suivant en réponse :
 
 Cela peut fonctionner pour des besoins très basiques, mais ça va être vite très limité.
 
-Pour des requêtes mieux structurées, GraphQL-ruby permet d'utiliser Relay, une surcouche à GraphQL aussi créée par Facebook, qui introduit deux paradigmes très pratiques dans GraphQL : 
+Pour des requêtes mieux structurées, Facebook a créé Relay, un client GraphQL qui introduit deux paradigmes très pratiques (gérés nativement par la gem) :
 
-- on travaille avec des IDs globaux (des strings créé à partir d'un encodage en base64 de `["NomDuModel, ID"]`)
+- on travaille avec des IDs globaux (des strings créés à partir d'un encodage en base64 de `["NomDuModel, ID"]`)
 - une nomenclature bien spécifique pour organiser et consommer les collections d'objets : les `connections`
 
-> *edit: J'ai réalisé le workshop initial en m'appuyant sur la version v1.9 de la gem graphql-ruby. La notion de connection a été extraite de Relay pour devenir le formatage par défaut des collections dans la v1.10.*
+> *edit: J'ai réalisé le workshop initial en m'appuyant sur la version v1.9 de la gem graphql-ruby. La notion de `connection` a été extraite de Relay pour devenir le formatage par défaut des collections dans la v1.10.*
 
-L'ID global à la place des ID classiques est là avant toute chose pour les applications JS qui vont consommer l'API. Cela permet notamment de toujours utiliser cet ID comme clé dans les boucles d'objets.
+L'ID global à la place des ID classiques est là avant toute chose pour les applications JS qui vont consommer l'API. Cela permet notamment de toujours utiliser cet ID comme clé dans les boucles d'objets. Du point de vue de l'API, travailler avec des ID uniques indépendamment du type d'objet est également très pratique.
 
 #### Nomenclature 
 
-Pour ce qui est des connections, voici à quoi ressemble notre précédente query adaptée sous ce format :
+Pour ce qui est des `connections`, voici à quoi ressemble notre précédente query adaptée sous ce format :
 
 ```
 {
@@ -234,7 +232,7 @@ Et la réponse correspondante :
       "pageInfo": {
         "hasNextPage": true,
         "hasPreviousPage": false,
-        "endCursor": "Mg",
+        "endCursor": "Mw",
         "startCursor": "MQ"
       },
       "edges": [
@@ -251,6 +249,13 @@ Et la réponse correspondante :
             "id": "UGxhY2UtMzUx",
             "displayName": "Frey of Riverrun"
           }
+        },
+        {
+          "cursor": "Mw",
+          "node": {
+            "id": "QmlsbGVyLTI=",
+            "displayName": "Something Else"
+          }
         }
       ]
     }
@@ -259,32 +264,30 @@ Et la réponse correspondante :
 
 ```
 
-La connection nous donne accès des informations complémentaires en plus de notre collection. Par défaut, la gem nous génère le `pageInfo` qui sert à la pagination par curseur, mais on peut également ajouter des champs personnalisés comme ici le totalCount rajouté pour gérer une pagination numérotée plus traditionnelle.
+La `connection` nous donne accès à des informations complémentaires en plus de notre collection. Par défaut, la gem nous génère le `pageInfo` qui sert à la pagination par curseur, mais on peut également ajouter des champs personnalisés comme ici le `totalCount` rajouté pour gérer une pagination numérotée plus traditionnelle.
 
-Les `edges` sont prévus pour contenir des informations liés au rapport entre l'objet et sa collection. Un peu comme une table de liaison. Par défaut, il va contenir le curseur, qui représente le positionnement du node qu'il contient au sein de la collection. Mais il est possible de définir ses propres champs personnalisés.
+Les `edges` sont prévus pour contenir des informations liés au rapport entre l'objet et sa collection. Par défaut, il va contenir le curseur, qui représente le positionnement du node qu'il contient au sein de la collection. Mais il est possible de définir ses propres champs personnalisés.
 
 Les `nodes` sont tout simplement les objets de la collection.
 
 #### Intégration
 
-L'utilisation de relay apporte des données précieuses aux requêtes, mais elle requiert en conséquence plus de verbosité dans la définition des queries. Concrètement, au lieu d'une query, on va devoir définir 3 types :
-- la query
-- la connection
-- le edge
+L'utilisation de relay apporte des données précieuses aux requêtes, mais elle requiert en conséquence plus de verbosité dans la définition des queries. Concrètement, au lieu d'une `query`, on va devoir définir 3 types :
+- la `query`
+- la `connection`
+- le `edge`
 
 ##### ConnectionType
 
-La définition du type de la connection comprend 3 éléments :
+La définition du type de la `connection` comprend 3 éléments :
 - la spécification du EdgeType à utiliser
-- les paramètres que l'on peut appliquer à cette connection
+- les paramètres que l'on peut appliquer à cette `connection`
 - les champs personnalisés qu'on peut demander en retour
 
 ```ruby
-# frozen_string_literal: true
-
 class Types::Connections::ProvidersConnectionType < Types::BaseConnection
   # On commence par appeler la classe du EdgeType qu'on veut associer
-  # à la conenction
+  # à la connection
   edge_type(Types::Edges::ProviderEdge)
 
   # En définissant ici des types Input, on pourra ensuite les appeler dans
@@ -301,7 +304,8 @@ class Types::Connections::ProvidersConnectionType < Types::BaseConnection
   end
 
   # Absent par défaut, on peut intégrer un compteur du nombre d'objets
-  # dans la collection en créant un field et son resolver dans le ConnectionType
+  # dans la collection en créant un field et son resolver
+  # dans le ConnectionType
   field :total_count, Integer, null: false
 
   def total_count
@@ -314,12 +318,10 @@ end
 
 ##### EdgeType
 
-Le Edge peut être pensé comme une table de liaison, qui fait la passerelle entre la connection et les nodes qu'elle contient. Par défaut, on doit y définit le node_type pour identifier le type d'objet retournés par notre connection. Mais il est également possible d'y définir des méthodes personnalisés.
+Le `edge` peut être pensé comme une table de liaison, qui fait la passerelle entre la `connection` et les `nodes` qu'elle contient. Par défaut, on doit y définir le `node_type` pour identifier le type d'objet retourné par notre `connection`. Mais il est également possible d'y définir des méthodes personnalisées.
 Je n'ai cependant pas encore rencontré de cas d'usage pour cette possibilité.
 
 ```ruby
-# frozen_string_literal: true
-
 class Types::Edges::ProviderEdge < GraphQL::Types::Relay::BaseEdge
   node_type(Types::ProviderType)
 end
@@ -328,11 +330,13 @@ end
 
 ##### QueryType
 
-Enfin, une fois la connection bien définie, il faut l'appeler dans une query (ou directement en dépendance dans un type de model). Pour cela, au lieu d'associer le field au type de l'objet final retourné, on l'associe au type de la connection.
+Enfin, une fois la `connection` bien définie, il faut l'appeler:
+- soit dans une query spécifique
+- soit dans le type d'un objet parent
+
+Pour cela, au lieu d'associer le field au type de l'objet final retourné, on l'associe au type de la `connection`.
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class QueryType < Types::BaseObject
     field :providers, Types::Connections::ProvidersConnectionType, null: true
@@ -345,11 +349,34 @@ end
 
 ```
 
+
+```ruby
+module Types
+  class ParentType < Types::BaseObject
+    # ...
+
+    global_id_field :id
+    field :display_name, String, null: true
+    
+    # ...
+    
+    field :providers, Types::Connections::ProvidersConnectionType, null: true
+
+    def providers
+      BatchLoader.for(object.id).batch(default_value: []) do |ids, loader|
+        Provider.where(parent_id: ids).each do |rk|
+          loader.call(rk.parent_id) { |i| i << rk }
+        end
+      end
+    end
+  end
+end
+
+```
+
 Par défaut, on peut passer tous les arguments de pagination de base à la requête (first, after, before, last...). Si nécessaire, on peut spécifier des arguments supplémentaires pour préciser notre requête :
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class QueryType < Types::BaseObject
     field :providers, Types::Connections::ProvidersConnectionType, null: true do
@@ -368,13 +395,11 @@ end
 
 ##### Extraction des queries
 
-Toutes les queries qu'on veut exposer sur notre API doivent être définies dans le fichier `query_type.rb`montré juste avant. Mais avec le gain en complexité d'une API, le fichier va être vite surchargé. Alors il est évidemment possibler d'extraire la logique des queries dans d'autres fichiers, des resolvers.
+Toutes les queries qu'on veut exposer sur notre API doivent être définies dans le fichier `query_type.rb`montré juste avant. Mais avec le gain en complexité d'une API, le fichier va être vite surchargé. Alors il est évidemment possible d'extraire la logique des queries dans d'autres fichiers, des resolvers.
 
 Le fichier `query_type.rb` se présentera alors ainsi :
 
 ```ruby
-# frozen_string_literal: true
-
 module Types
   class QueryType < Types::BaseObject
     # ...
@@ -388,8 +413,6 @@ end
 La logique de la query va se trouver dans un fichier à part :
 
 ```ruby
-# frozen_string_literal: true
-
 module Queries
   class AllProvidersConnection < Queries::BaseQuery
     description 'list all providers'
@@ -419,10 +442,14 @@ Les méthodes personnalisées `connection_with_arguments` et `apply_filter` sont
 
 ```ruby
 def connection_with_arguments(res, **args)
-  o = args[:order] || { by: :id, direction: :desc }
+  order = args[:order] || { by: :id, direction: :desc }
   res = res.filter(args[:search]) if args[:search]
   res = res.offset(args[:skip]) if args[:skip]
-  res = res.order("#{res.model.table_name}.#{o[:by]} #{o[:direction]}")
+  # la spécification du nom de la table est nécessaire pour permettre
+  # le tri lorsque la requête SQL initiale contient des jointures
+  res = res.order(
+    "#{res.model.table_name}.#{order[:by]} #{order[:direction]}"
+  )
   res
 end
 ```
@@ -431,7 +458,7 @@ end
 
 Habituellement, dans nos API REST, nous avons l'habitude d'utiliser des scopes pour permettre aux utilisateurs de filtrer les résultats d'une requête. Mais ces filtres restent assez sommaires. Dans la conception de cette première API GraphQL, en travaillant avec mon collègue développeur React et consommateur de l'API, nous avons souhaité aller un peu plus loin. GraphQL permet de choisir précisément les données qu'on désire recevoir, alors autant donner également la possibilité de les filtrer avec précision.
 
-On a donc cherché une structure existante pour formater les filtres et nous avons décidé de nous baser sur la norme proposée dans la documentation de GatsbyJS : https://www.gatsbyjs.org/docs/graphql-reference/#skip
+On a donc cherché une structure existante pour formater les filtres et nous avons décidé de nous baser sur la norme proposée dans [la documentation de GatsbyJS](https://www.gatsbyjs.org/docs/graphql-reference/#skip).
 
 > ### Complete list of possible operators
 >
@@ -486,13 +513,11 @@ end
 
 C'est encore un travail en cours, le code est rudimentaire, mais cela suffit pour filtrer les premières requêtes.
 
-### Pagination par curseur
+### Pagination
 
-Sur cette premier application, les écrans étaient encore pensés avec une pagination numérotée. J'ai donc dû intégrer des champs par défaut à toutes les connections :
+Sur cette premier application, les écrans étaient encore pensés avec une pagination numérotée. J'ai donc dû intégrer des champs par défaut à toutes les `connections` :
 
 ```ruby
-# frozen_string_literal: true
-
 class Types::BaseConnection < GraphQL::Types::Relay::BaseConnection
   field :total_count, Integer, null: false
   field :total_pages, Integer, null: false
@@ -523,6 +548,21 @@ end
 
 Cela fonctionne, mais c'est regrettable parce que GraphQL est vraiment pensé pour la navigation par curseur, on est donc obligé de réinventer la roue à plusieurs endroits alors qu'on a un fonctionnement clef en main et certainement plus performant à disposition.
 
-On gagnerait certainement beaucoup de perf à pousser la pagination par curseur partout ou on pourrait se passer du nombre de page total, du numéro de page, du nombre d'éléments dans la collection.
+On gagnerait certainement beaucoup en performances à pousser la pagination par curseur partout où on pourrait se passer du nombre de page total, du numéro de page, du nombre d'éléments dans la collection.
 
-## TODO: conclure
+# Du coup, c'est bien ?
+
+Notre première fonctionnalité utilisant GraphQL va partir en production cette semaine, alors il est encore un peu tôt pour dresser un bilan complet de l'utilisation de ce langage API.
+
+Néanmoins, les avantages pour nos développeurs front-end sont immédiats, tant React et GraphQL sont pensés pour être utilisés ensemble.
+En revanche, si ce premier projet n'est consommé que par une application web, il faudra bientôt se poser la question des librairies GraphQL pour langages mobile, notamment sur Flutter, les tester et espérer qu'elles offrent le même confort d'utilisation.
+
+Côté back-end, j'ai apprécié de travailler sur des classes entièrement typées. Bien que cela soit quelque peu verbeux, ça impose une certaine rigueur qui, une fois le réflexe acquis, devient particulièrement confortable (moins de bugs surprises, quand ça casse on sait plus rapidement pourquoi).
+
+:::info
+Note: Cela m'a d'ailleurs motivé à me réintéresser à Sorbet, peut-être le sujet d'un prochain article ?
+:::
+
+Forcément, on doit réapprendre toute sa façon de construire les services de son API, mais je pense que c'est pour le mieux. Sans même envisager de basculer intégralement de REST à GraphQL, connaître et tester les paradigmes de l'un et de l'autre ne peut qu'améliorer notre façon de travailler.
+
+Restera la question des performances, notamment la lutte contre les requêtes N+1... Affaire à suivre !
